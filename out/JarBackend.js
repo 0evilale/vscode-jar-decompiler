@@ -1,0 +1,113 @@
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.JarBackend = void 0;
+exports.getBackend = getBackend;
+exports.disposeBackend = disposeBackend;
+const vscode = __importStar(require("vscode"));
+const cp = __importStar(require("child_process"));
+const path = __importStar(require("path"));
+const readline = __importStar(require("readline"));
+class JarBackend {
+    constructor(jarPath) {
+        this.jarPath = jarPath;
+        this.pending = new Map();
+        this.nextId = 1;
+        this.readyPromise = new Promise(r => { this.readyResolve = r; });
+        this.spawn();
+    }
+    spawn() {
+        const config = vscode.workspace.getConfiguration('jarDecompiler');
+        const java = config.get('javaPath', 'java');
+        this.proc = cp.spawn(java, ['-jar', this.jarPath], {
+            stdio: ['pipe', 'pipe', 'pipe']
+        });
+        readline.createInterface({ input: this.proc.stdout }).on('line', line => {
+            try {
+                const msg = JSON.parse(line);
+                if ('ready' in msg) {
+                    this.readyResolve();
+                    return;
+                }
+                const p = this.pending.get(msg.id);
+                if (!p)
+                    return;
+                this.pending.delete(msg.id);
+                msg.ok ? p.resolve(msg) : p.reject(new Error(msg.error));
+            }
+            catch { /* ignore malformed lines */ }
+        });
+        this.proc.on('error', err => {
+            for (const p of this.pending.values())
+                p.reject(err);
+            this.pending.clear();
+        });
+    }
+    async send(payload) {
+        await this.readyPromise;
+        const id = this.nextId++;
+        return new Promise((resolve, reject) => {
+            this.pending.set(id, { resolve, reject });
+            this.proc.stdin.write(JSON.stringify({ id, ...payload }) + '\n');
+        });
+    }
+    async listEntries(jarFilePath) {
+        const r = await this.send({ cmd: 'list', jar: jarFilePath });
+        return r.entries;
+    }
+    async decompile(jarFilePath, entry, backend) {
+        const r = await this.send({ cmd: 'decompile', jar: jarFilePath, entry, backend });
+        return r.source;
+    }
+    async readRaw(jarFilePath, entry) {
+        const r = await this.send({ cmd: 'read', jar: jarFilePath, entry });
+        return Buffer.from(r.data, 'base64');
+    }
+    dispose() { this.proc?.kill(); }
+}
+exports.JarBackend = JarBackend;
+let _instance;
+function getBackend(extensionPath) {
+    if (!_instance) {
+        const jar = path.join(extensionPath, 'resources', 'decompiler-backend.jar');
+        _instance = new JarBackend(jar);
+    }
+    return _instance;
+}
+function disposeBackend() {
+    _instance?.dispose();
+    _instance = undefined;
+}
+//# sourceMappingURL=JarBackend.js.map
