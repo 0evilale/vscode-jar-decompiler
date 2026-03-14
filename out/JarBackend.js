@@ -45,7 +45,10 @@ class JarBackend {
         this.jarPath = jarPath;
         this.pending = new Map();
         this.nextId = 1;
-        this.readyPromise = new Promise(r => { this.readyResolve = r; });
+        this.readyPromise = new Promise((resolve, reject) => {
+            this.readyResolve = resolve;
+            this.readyReject = reject;
+        });
         this.spawn();
     }
     spawn() {
@@ -54,10 +57,16 @@ class JarBackend {
         this.proc = cp.spawn(java, ['-jar', this.jarPath], {
             stdio: ['pipe', 'pipe', 'pipe']
         });
+        // Timeout: if Java doesn't signal ready in 30s, fail clearly
+        const timeout = setTimeout(() => {
+            this.readyReject(new Error(`Java backend timed out. Check that Java is installed and '${java}' is in PATH.\n` +
+                `JAR: ${this.jarPath}`));
+        }, 30000);
         readline.createInterface({ input: this.proc.stdout }).on('line', line => {
             try {
                 const msg = JSON.parse(line);
                 if ('ready' in msg) {
+                    clearTimeout(timeout);
                     this.readyResolve();
                     return;
                 }
@@ -70,9 +79,16 @@ class JarBackend {
             catch { /* ignore malformed lines */ }
         });
         this.proc.on('error', err => {
+            clearTimeout(timeout);
+            this.readyReject(new Error(`Failed to start Java: ${err.message}`));
             for (const p of this.pending.values())
                 p.reject(err);
             this.pending.clear();
+        });
+        this.proc.on('exit', (code) => {
+            if (code !== 0 && code !== null) {
+                this.readyReject(new Error(`Java process exited with code ${code}`));
+            }
         });
     }
     async send(payload) {
