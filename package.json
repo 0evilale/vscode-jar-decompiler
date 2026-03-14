@@ -1,0 +1,78 @@
+{
+  "name": "jar-decompiler",
+  "displayName": "JAR Decompiler",
+  "description": "Browse and decompile Java JAR files with drag-and-drop. Read-only with full editor features.",
+  "version": "0.1.0",
+  "publisher": "sota",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Programming Languages", "Other"],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "jarDecompiler.openJar",
+        "title": "Open JAR File",
+        "category": "JAR Decompiler"
+      },
+      {
+        "command": "jarDecompiler.setDecompiler",
+        "title": "Set Decompiler",
+        "category": "JAR Decompiler"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "jarContents",
+          "name": "JAR Contents",
+          "when": "jarDecompiler.jarLoaded"
+        }
+      ]
+    },
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "jarDecompiler.openJar",
+          "when": "resourceExtname == .jar",
+          "group": "navigation"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "jarDecompiler.setDecompiler",
+          "when": "view == jarContents",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "JAR Decompiler",
+      "properties": {
+        "jarDecompiler.javaPath": {
+          "type": "string",
+          "default": "java",
+          "description": "Path to the Java executable (default: 'java' from PATH)"
+        },
+        "jarDecompiler.decompiler": {
+          "type": "string",
+          "default": "CFR",
+          "enum": ["CFR", "VINEFLOWER"],
+          "description": "Decompiler backend to use"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "build-backend": "cd backend && ./gradlew shadowJar && cp build/libs/decompiler-backend.jar ../resources/",
+    "package": "npm run compile && npx @vscode/vsce package",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}
