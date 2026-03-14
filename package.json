@@ -6,7 +6,7 @@
   "publisher": "sota",
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Programming Languages", "Other"],
-  "activationEvents": [],
+  "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
