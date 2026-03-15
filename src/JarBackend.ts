@@ -37,10 +37,11 @@ export class JarBackend implements vscode.Disposable {
         let args: string[];
 
         if (isWindows) {
-            // Extension host runs on Windows but Java is in WSL — use wsl interop
+            // Extension host runs on Windows but Java is in WSL.
+            // Use 'wsl bash -lc' so .bashrc/.zshrc (sdkman) is sourced and java is in PATH.
             const wslJar = this.toWslPath(this.jarPath);
             command = 'wsl';
-            args = [javaPath, '-jar', wslJar];
+            args = ['bash', '-lc', `${javaPath} -jar '${wslJar}'`];
         } else {
             command = javaPath;
             args = ['-jar', this.jarPath];
