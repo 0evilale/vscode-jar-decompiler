@@ -5,6 +5,7 @@
   "version": "0.1.0",
   "publisher": "sota",
   "engines": { "vscode": "^1.85.0" },
+  "extensionKind": ["workspace"],
   "categories": ["Programming Languages", "Other"],
   "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",
