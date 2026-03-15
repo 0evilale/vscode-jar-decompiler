@@ -80,14 +80,23 @@ class JarBackend {
         });
         this.proc.on('error', err => {
             clearTimeout(timeout);
-            this.readyReject(new Error(`Failed to start Java: ${err.message}`));
+            const error = new Error(`Failed to start Java: ${err.message}`);
+            this.readyReject(error);
             for (const p of this.pending.values())
-                p.reject(err);
+                p.reject(error);
             this.pending.clear();
+            // Reset singleton so next call retries with updated settings
+            if (_instance === this) {
+                _instance = undefined;
+            }
         });
         this.proc.on('exit', (code) => {
             if (code !== 0 && code !== null) {
-                this.readyReject(new Error(`Java process exited with code ${code}`));
+                const error = new Error(`Java process exited with code ${code}`);
+                this.readyReject(error);
+                if (_instance === this) {
+                    _instance = undefined;
+                }
             }
         });
     }
