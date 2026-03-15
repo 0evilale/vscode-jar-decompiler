@@ -1,8 +1,10 @@
 .vscode/**
+.claude/**
 src/**
 backend/**
+node_modules/**
 .gitignore
+package-lock.json
 tsconfig.json
 **/*.map
 **/*.ts
-!node_modules
