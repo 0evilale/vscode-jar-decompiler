@@ -22,18 +22,38 @@ export class JarBackend implements vscode.Disposable {
         this.spawn();
     }
 
+    /** Converts \\wsl.localhost\Distro\home\... → /home/... for use inside WSL commands */
+    private toWslPath(winPath: string): string {
+        const m = winPath.match(/^\\\\wsl[.$][^\\]+\\(.+)$/);
+        return m ? '/' + m[1].replace(/\\/g, '/') : winPath;
+    }
+
     private spawn(): void {
         const config = vscode.workspace.getConfiguration('jarDecompiler');
-        const java = config.get<string>('javaPath', 'java');
+        const javaPath = config.get<string>('javaPath', 'java');
+        const isWindows = process.platform === 'win32';
 
-        this.proc = cp.spawn(java, ['-jar', this.jarPath], {
+        let command: string;
+        let args: string[];
+
+        if (isWindows) {
+            // Extension host runs on Windows but Java is in WSL — use wsl interop
+            const wslJar = this.toWslPath(this.jarPath);
+            command = 'wsl';
+            args = [javaPath, '-jar', wslJar];
+        } else {
+            command = javaPath;
+            args = ['-jar', this.jarPath];
+        }
+
+        this.proc = cp.spawn(command, args, {
             stdio: ['pipe', 'pipe', 'pipe']
         });
 
         // Timeout: if Java doesn't signal ready in 30s, fail clearly
         const timeout = setTimeout(() => {
             this.readyReject(new Error(
-                `Java backend timed out. Check that Java is installed and '${java}' is in PATH.\n` +
+                `Java backend timed out. Check that Java is installed and '${javaPath}' is in PATH.\n` +
                 `JAR: ${this.jarPath}`
             ));
         }, 30000);
