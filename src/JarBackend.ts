@@ -22,11 +22,21 @@ export class JarBackend implements vscode.Disposable {
         this.spawn();
     }
 
-    /** Converts \\wsl.localhost\DistroName\home\... → /home/... for use inside WSL commands */
+    /** Converts Windows paths to WSL paths for use inside WSL commands */
     private toWslPath(winPath: string): string {
-        // Strip \\wsl.localhost\DistroName\ prefix, keep the rest as Unix path
-        const m = winPath.match(/^\\\\wsl[.$][^\\]+\\[^\\]+\\(.+)$/);
-        return m ? '/' + m[1].replace(/\\/g, '/') : winPath;
+        // \\wsl.localhost\DistroName\home\... → /home/...
+        const wslMatch = winPath.match(/^\\\\wsl[.$][^\\]+\\[^\\]+\\(.+)$/);
+        if (wslMatch) return '/' + wslMatch[1].replace(/\\/g, '/');
+
+        // C:\Users\... → /mnt/c/Users/...
+        const driveMatch = winPath.match(/^([a-zA-Z]):[\\\/](.*)$/);
+        if (driveMatch) return `/mnt/${driveMatch[1].toLowerCase()}/${driveMatch[2].replace(/\\/g, '/')}`;
+
+        return winPath;
+    }
+
+    private normalizePath(p: string): string {
+        return process.platform === 'win32' ? this.toWslPath(p) : p;
     }
 
     private spawn(): void {
@@ -90,32 +100,42 @@ export class JarBackend implements vscode.Disposable {
                     `JAR: ${wslJar}`
                 );
                 this.readyReject(error);
+                for (const p of this.pending.values()) p.reject(error);
+                this.pending.clear();
                 if (_instance === this) { _instance = undefined; }
             }
         });
     }
 
-    private async send<T>(payload: object): Promise<T> {
+    private async send<T>(payload: object, timeoutMs = 60000): Promise<T> {
         await this.readyPromise;
         const id = this.nextId++;
         return new Promise<T>((resolve, reject) => {
-            this.pending.set(id, { resolve, reject });
+            const timer = setTimeout(() => {
+                if (this.pending.delete(id)) {
+                    reject(new Error(`Request timed out after ${timeoutMs / 1000}s (id=${id})`));
+                }
+            }, timeoutMs);
+            this.pending.set(id, {
+                resolve: (v) => { clearTimeout(timer); resolve(v); },
+                reject:  (e) => { clearTimeout(timer); reject(e); }
+            });
             this.proc!.stdin!.write(JSON.stringify({ id, ...payload }) + '\n');
         });
     }
 
     async listEntries(jarFilePath: string): Promise<JarEntryInfo[]> {
-        const r = await this.send<{ ok: true; entries: JarEntryInfo[] }>({ cmd: 'list', jar: jarFilePath });
+        const r = await this.send<{ ok: true; entries: JarEntryInfo[] }>({ cmd: 'list', jar: this.normalizePath(jarFilePath) });
         return r.entries;
     }
 
     async decompile(jarFilePath: string, entry: string, backend: DecompilerBackend): Promise<string> {
-        const r = await this.send<{ ok: true; source: string }>({ cmd: 'decompile', jar: jarFilePath, entry, backend });
+        const r = await this.send<{ ok: true; source: string }>({ cmd: 'decompile', jar: this.normalizePath(jarFilePath), entry, backend });
         return r.source;
     }
 
     async readRaw(jarFilePath: string, entry: string): Promise<Buffer> {
-        const r = await this.send<{ ok: true; data: string }>({ cmd: 'read', jar: jarFilePath, entry });
+        const r = await this.send<{ ok: true; data: string }>({ cmd: 'read', jar: this.normalizePath(jarFilePath), entry });
         return Buffer.from(r.data, 'base64');
     }
 

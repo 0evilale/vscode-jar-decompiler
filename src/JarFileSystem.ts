@@ -9,7 +9,10 @@ export function buildUri(jarPath: string, entryPath: string): vscode.Uri {
     const displayPath = entryPath.endsWith('.class')
         ? entryPath.slice(0, -6) + '.java'
         : entryPath;
-    return vscode.Uri.from({ scheme: JAR_SCHEME, path: `${jarPath}!/${displayPath}` });
+    // Normalize to forward slashes and ensure path is absolute (VSCode requires leading /)
+    const fwdJar = jarPath.replace(/\\/g, '/');
+    const absJar = fwdJar.startsWith('/') ? fwdJar : '/' + fwdJar;
+    return vscode.Uri.from({ scheme: JAR_SCHEME, path: `${absJar}!/${displayPath}` });
 }
 
 /** Parses jarPath and entryPath from a jar-decompiled URI. */
@@ -17,7 +20,9 @@ export function parseUri(uri: vscode.Uri): { jarPath: string; entryPath: string 
     const raw = uri.path;
     const sep = raw.indexOf('!/');
     if (sep === -1) throw new Error(`Invalid URI: ${uri}`);
-    const jarPath = raw.slice(0, sep);
+    let jarPath = raw.slice(0, sep);
+    // Windows drive paths were stored as /c:/... → restore to c:/...
+    if (/^\/[a-zA-Z]:\//.test(jarPath)) jarPath = jarPath.slice(1);
     const displayEntry = raw.slice(sep + 2);
     // Convert .java → .class to look up in the JAR
     const entryPath = displayEntry.endsWith('.java')
@@ -56,25 +61,32 @@ export class JarFileSystemProvider implements vscode.FileSystemProvider {
         if (this.cache.has(key)) return this.cache.get(key)!;
 
         const { jarPath, entryPath } = parseUri(uri);
+        console.log(`[JAR] readFile jarPath=${jarPath} entry=${entryPath}`);
+
         const backend = getBackend(this.extensionPath);
         const config = vscode.workspace.getConfiguration('jarDecompiler');
         const decompiler = config.get<DecompilerBackend>('decompiler', 'CFR');
 
-        let content: Uint8Array;
-        if (entryPath.endsWith('.class')) {
-            const source = await backend.decompile(jarPath, entryPath, decompiler);
-            content = Buffer.from(source, 'utf-8');
-        } else {
-            const buf = await backend.readRaw(jarPath, entryPath);
-            content = new Uint8Array(buf);
+        try {
+            let content: Uint8Array;
+            if (entryPath.endsWith('.class')) {
+                const source = await backend.decompile(jarPath, entryPath, decompiler);
+                content = Buffer.from(source, 'utf-8');
+            } else {
+                const buf = await backend.readRaw(jarPath, entryPath);
+                content = new Uint8Array(buf);
+            }
+            this.cache.set(key, content);
+            return content;
+        } catch (err: any) {
+            vscode.window.showErrorMessage(`JAR Decompiler readFile: ${err.message}`);
+            throw err;
         }
-
-        this.cache.set(key, content);
-        return content;
     }
 
     clearCache(jarPath?: string): void {
         if (!jarPath) { this.cache.clear(); return; }
-        for (const k of this.cache.keys()) if (k.includes(jarPath)) this.cache.delete(k);
+        const normalized = jarPath.replace(/\\/g, '/');
+        for (const k of this.cache.keys()) if (k.includes(normalized)) this.cache.delete(k);
     }
 }
