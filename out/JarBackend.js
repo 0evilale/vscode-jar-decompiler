@@ -51,9 +51,10 @@ class JarBackend {
         });
         this.spawn();
     }
-    /** Converts \\wsl.localhost\Distro\home\... → /home/... for use inside WSL commands */
+    /** Converts \\wsl.localhost\DistroName\home\... → /home/... for use inside WSL commands */
     toWslPath(winPath) {
-        const m = winPath.match(/^\\\\wsl[.$][^\\]+\\(.+)$/);
+        // Strip \\wsl.localhost\DistroName\ prefix, keep the rest as Unix path
+        const m = winPath.match(/^\\\\wsl[.$][^\\]+\\[^\\]+\\(.+)$/);
         return m ? '/' + m[1].replace(/\\/g, '/') : winPath;
     }
     spawn() {
@@ -111,7 +112,10 @@ class JarBackend {
         });
         this.proc.on('exit', (code) => {
             if (code !== 0 && code !== null) {
-                const error = new Error(`Java process exited with code ${code}`);
+                const wslJar = process.platform === 'win32' ? this.toWslPath(this.jarPath) : this.jarPath;
+                const error = new Error(`Java process exited with code ${code}.\n` +
+                    `Command: ${command} ${args.join(' ')}\n` +
+                    `JAR: ${wslJar}`);
                 this.readyReject(error);
                 if (_instance === this) {
                     _instance = undefined;
