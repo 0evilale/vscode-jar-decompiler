@@ -26,7 +26,7 @@ tasks.shadowJar {
     archiveFileName = "decompiler-backend.jar"
     archiveClassifier = null
     manifest {
-        attributes["Main-Class"] = "decompiler.cli.CliMain"
+        attributes["Main-Class"] = "com.evilale.decompiler.cli.CliMain"
     }
 }
 
