@@ -4,7 +4,7 @@ export interface JarEntryInfo {
     size: number;
 }
 
-export type DecompilerBackend = 'CFR' | 'VINEFLOWER';
+export type DecompilerBackend = 'PROCYON' | 'CFR' | 'VINEFLOWER';
 
 // Responses from the Java CLI
 export type CliResponse =

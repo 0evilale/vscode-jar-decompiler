@@ -19,6 +19,7 @@ repositories {
 dependencies {
     implementation("net.fabricmc:cfr:0.2.2")
     implementation("org.vineflower:vineflower:1.11.1")
+    implementation("org.bitbucket.mstrobel:procyon-compilertools:0.6.0")
     implementation("com.google.code.gson:gson:2.10.1")
 }
 

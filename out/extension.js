@@ -72,9 +72,9 @@ function activate(context) {
     }));
     // Command: Set Decompiler
     context.subscriptions.push(vscode.commands.registerCommand('jarDecompiler.setDecompiler', async () => {
-        const options = ['CFR', 'VINEFLOWER'];
+        const options = ['PROCYON', 'CFR', 'VINEFLOWER'];
         const current = vscode.workspace.getConfiguration('jarDecompiler')
-            .get('decompiler', 'CFR');
+            .get('decompiler', 'PROCYON');
         const picked = await vscode.window.showQuickPick(options, {
             title: 'Select Decompiler Backend',
             placeHolder: `Current: ${current}`

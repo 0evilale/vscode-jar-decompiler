@@ -60,8 +60,8 @@
         },
         "jarDecompiler.decompiler": {
           "type": "string",
-          "default": "CFR",
-          "enum": ["CFR", "VINEFLOWER"],
+          "default": "PROCYON",
+          "enum": ["PROCYON", "CFR", "VINEFLOWER"],
           "description": "Decompiler backend to use"
         }
       }

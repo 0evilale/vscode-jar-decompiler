@@ -98,7 +98,7 @@ public class CliMain {
             case "decompile" -> {
                 String jar = cmd.get("jar").getAsString();
                 String entry = cmd.get("entry").getAsString();
-                String backendName = cmd.has("backend") ? cmd.get("backend").getAsString() : "CFR";
+                String backendName = cmd.has("backend") ? cmd.get("backend").getAsString() : "PROCYON";
                 JarDecompiler.Backend backend = parseBackend(backendName);
                 String source = JarDecompiler.decompile(jar, entry, backend);
                 yield String.format("{\"id\":%d,\"ok\":true,\"source\":%s}", id, gson.toJson(source));
@@ -117,8 +117,10 @@ public class CliMain {
 
     private static Backend parseBackend(String name) {
         return switch (name.toUpperCase()) {
+            case "PROCYON"    -> JarDecompiler.Backend.PROCYON;
             case "VINEFLOWER" -> JarDecompiler.Backend.VINEFLOWER;
-            default -> JarDecompiler.Backend.CFR;
+            case "CFR"        -> JarDecompiler.Backend.CFR;
+            default -> throw new IllegalArgumentException("Unknown backend: " + name);
         };
     }
 }

@@ -12,6 +12,8 @@ import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger.Severity;
 import org.jetbrains.java.decompiler.main.extern.IResultSaver;
 
+import com.strobel.assembler.metadata.ITypeLoader;
+
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
@@ -21,29 +23,78 @@ import java.util.jar.Manifest;
 
 public class JarDecompiler {
 
-    public enum Backend { CFR, VINEFLOWER }
+    public enum Backend { PROCYON, CFR, VINEFLOWER }
 
     public static String decompile(String jarPath, String entryPath, Backend backend) throws Exception {
         byte[] classBytes = readEntry(jarPath, entryPath);
-        if (backend == Backend.VINEFLOWER) {
-            return decompileWithVineflower(classBytes, entryPath, jarPath);
-        }
-        // CFR with automatic fallback to Vineflower on failure
-        try {
-            return decompileWithCfr(classBytes, entryPath);
-        } catch (Throwable cfrError) {
-            try {
-                return decompileWithVineflower(classBytes, entryPath, jarPath);
-            } catch (Throwable vfError) {
-                String msg = cfrError.getClass().getSimpleName();
-                if (cfrError.getMessage() != null) msg += ": " + cfrError.getMessage();
-                throw new RuntimeException("Decompilation failed (CFR + Vineflower): " + msg);
-            }
-        }
+        List<Backend> chain = switch (backend) {
+            case PROCYON    -> List.of(Backend.PROCYON, Backend.VINEFLOWER, Backend.CFR);
+            case VINEFLOWER -> List.of(Backend.VINEFLOWER, Backend.CFR);
+            case CFR        -> List.of(Backend.CFR);
+        };
+        return decompileWithFallback(classBytes, entryPath, jarPath, chain);
     }
 
     public static byte[] readRaw(String jarPath, String entryPath) throws Exception {
         return readEntry(jarPath, entryPath);
+    }
+
+    // -------------------------------------------------------------------------
+    // Generic fallback chain system
+    // -------------------------------------------------------------------------
+
+    private static String decompileWithFallback(byte[] bytes, String entry, String jar, List<Backend> chain) throws Exception {
+        List<String> errors = new ArrayList<>();
+        for (Backend b : chain) {
+            try {
+                return switch (b) {
+                    case PROCYON    -> decompileWithProcyon(bytes, entry);
+                    case VINEFLOWER -> decompileWithVineflower(bytes, entry, jar);
+                    case CFR        -> decompileWithCfr(bytes, entry);
+                };
+            } catch (Throwable t) {
+                String msg = b.name() + ": " + t.getClass().getSimpleName();
+                if (t.getMessage() != null) msg += ": " + t.getMessage();
+                errors.add(msg);
+            }
+        }
+        throw new RuntimeException("Decompilation failed: " + String.join("; ", errors));
+    }
+
+    // -------------------------------------------------------------------------
+    // Procyon backend
+    // -------------------------------------------------------------------------
+
+    private static String decompileWithProcyon(byte[] classBytes, String entryPath) throws Exception {
+        String internalName = entryPath.endsWith(".class")
+            ? entryPath.substring(0, entryPath.length() - 6)
+            : entryPath;
+
+        com.strobel.decompiler.DecompilerSettings settings = com.strobel.decompiler.DecompilerSettings.javaDefaults();
+        settings.setShowSyntheticMembers(false);
+
+        // TypeLoader that only knows about the current class, returns false for everything else
+        ITypeLoader loader = (name, buffer) -> {
+            if (name.equals(internalName)) {
+                buffer.putByteArray(classBytes, 0, classBytes.length);
+                buffer.position(0);
+                return true;
+            }
+            return false; // Can't resolve other types
+        };
+
+        settings.setTypeLoader(loader);
+
+        StringWriter writer = new StringWriter();
+        com.strobel.decompiler.ITextOutput output = new com.strobel.decompiler.PlainTextOutput(writer);
+
+        com.strobel.decompiler.Decompiler.decompile(internalName, output, settings);
+
+        String result = writer.toString().trim();
+        if (result.isEmpty()) {
+            throw new RuntimeException("Procyon produced no output");
+        }
+        return result;
     }
 
     // -------------------------------------------------------------------------
@@ -146,7 +197,7 @@ public class JarDecompiler {
             if (resultHolder[0] != null) {
                 return resultHolder[0].trim();
             }
-            return decompileWithCfr(classBytes, entryPath);
+            throw new RuntimeException("Vineflower produced no output");
         } finally {
             deleteRecursive(tempDir);
         }
